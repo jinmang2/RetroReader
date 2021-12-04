@@ -18,7 +18,11 @@ from .constants import (
     QUESTION_COLUMN_NAME,
     CONTEXT_COLUMN_NAME,
     ANSWER_COLUMN_NAME,
-    ID_COLUMN_NAME, 
+    ID_COLUMN_NAME,
+    SCORE_EXT_FILE_NAME,
+    INTENSIVE_PRED_FILE_NAME,
+    NBEST_PRED_FILE_NAME,
+    SCORE_DIFF_FILE_NAME,
 )
 from .preprocess import get_sketch_features, get_intensive_features
 
@@ -60,7 +64,7 @@ class SketchReader(BaseReader):
         
         # Save external front verification score        
         final_map = dict(zip(eval_examples[ID_COLUMN_NAME], score_ext.tolist()))
-        with open(os.path.join(self.args.output_dir, "cls_score.json"), "w") as writer:
+        with open(os.path.join(self.args.output_dir, SCORE_EXT_FILE_NAME), "w") as writer:
             writer.write(json.dumps(final_map, indent=4) + "\n")
         if mode == "evaluate":
             return EvalPrediction(
@@ -84,7 +88,7 @@ class IntensiveReader(BaseReader):
         # Internal Front Verification (I-FV)
         # Verification is already done inside the model
         # Post-processing: we match the start logits and end logits to answers in the original context.
-        predictions, _, scores_diff_json = compute_predictions(
+        predictions, _, _,  scores_diff_json = compute_predictions(
             eval_examples,
             eval_dataset,
             output.predictions,
@@ -292,10 +296,10 @@ class IntensiveReader(BaseReader):
             if not os.path.isdir(output_dir):
                 raise EnvironmentError(f"{output_dir} is not a directory.")
 
-            prediction_file = os.path.join(output_dir, "predictions.json")
-            nbest_file = os.path.join(output_dir, "nbest_predictions.json")
+            prediction_file = os.path.join(output_dir, INTENSIVE_PRED_FILE_NAME)
+            nbest_file = os.path.join(output_dir, NBEST_PRED_FILE_NAME)
             if version_2_with_negative:
-                null_odds_file = os.path.join(output_dir, "null_odds.json")
+                null_odds_file = os.path.join(output_dir, SCORE_DIFF_FILE_NAME)
 
             logger.info(f"Saving predictions to {prediction_file}.")
             with open(prediction_file, "w") as writer:
@@ -308,7 +312,7 @@ class IntensiveReader(BaseReader):
                 with open(null_odds_file, "w") as writer:
                     writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
 
-        return all_predictions, all_nbest_json, scores_diff_json
+        return all_predictions, all_nbest_json, scores_diff_json, scores_diff_json
     
     
 class RearVerifier:
@@ -400,7 +404,7 @@ class RetroReader:
         sketch_features = self.sketch_prep_fn(inputs)
         intensive_features = self.intensive_prep_fn(inputs)
         score_ext = self.sketch_reader.predict(sketch_features, inputs)
-        _, nbest_preds, score_diff = self.intensive_reader.predict(intensive_features, inputs)
+        _, nbest_preds, score_diff, _ = self.intensive_reader.predict(intensive_features, inputs)
         predictions, scores = self.rear_verifier(score_ext, score_diff, nbest_preds)
         return predictions, scores
     

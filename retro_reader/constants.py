@@ -71,4 +71,7 @@ ANSWER_COLUMN_NAME = "answers"
 ANSWERABLE_COLUMN_NAME = "is_impossible"
 ID_COLUMN_NAME = "guid"
 
-SKETCH_MODEL_FILE_NAME = 
+SCORE_EXT_FILE_NAME = "cls_score.json"
+INTENSIVE_PRED_FILE_NAME = "predictions.json"
+NBEST_PRED_FILE_NAME = "nbest_predictions.json"
+SCORE_DIFF_FILE_NAME = "null_odds.json"
