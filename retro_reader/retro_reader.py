@@ -88,7 +88,7 @@ class IntensiveReader(BaseReader):
         # Internal Front Verification (I-FV)
         # Verification is already done inside the model
         # Post-processing: we match the start logits and end logits to answers in the original context.
-        predictions, _, _,  scores_diff_json = compute_predictions(
+        predictions, _, _, scores_diff_json = compute_predictions(
             eval_examples,
             eval_dataset,
             output.predictions,
@@ -386,21 +386,25 @@ class RetroReader:
         if isinstance(sketch_reader, dict):
             sketch_reader = SketchReader(data_args=data_args, **sketch_reader)
         self.sketch_reader = sketch_reader
-        self.sketch_prep_fn = get_sketch_features(tokenizer, "test", data_args)
+        self.sketch_prep_fn, _ = get_sketch_features(tokenizer, "test", data_args)
         if isinstance(intensive_reader, dict):
             intensive_reader = IntensiveReader(data_args=data_args, **intensive_reader)
         self.intensive_reader = intensive_reader
-        self.intensive_prep_fn = get_intensive_features(tokenizer, "test", data_args)
+        self.intensive_prep_fn, _ = get_intensive_features(tokenizer, "test", data_args)
         self.rear_verifier = RearVerifier(beta1, beta2, best_cof)
         
     def __call__(
         self,
-        query: Union[str],
+        query: str,
         context: Union[str, List[str]],
     ):
         if isinstance(context, list):
             context = " ".join(context)
-        inputs = {QUESTION_COLUMN_NAME: query, CONTEXT_COLUMN_NAME: context}
+        inputs = {
+            "example_id": "0",
+            QUESTION_COLUMN_NAME: query, 
+            CONTEXT_COLUMN_NAME: context
+        }
         sketch_features = self.sketch_prep_fn(inputs)
         intensive_features = self.intensive_prep_fn(inputs)
         score_ext = self.sketch_reader.predict(sketch_features, inputs)

@@ -5,7 +5,7 @@ import json
 import math
 import collections
 from datetime import datetime
-from typing import Optional, List, Dict, Tuple, Callable
+from typing import Optional, List, Dict, Tuple, Callable, Any
 
 import torch
 import numpy as np
@@ -18,6 +18,7 @@ from transformers import (
 from transformers.trainer_utils import (
     PredictionOutput,
     EvalPrediction,
+    EvalLoopOutput,
     denumpify_detensorize,
     speed_metrics,
 )
@@ -85,8 +86,11 @@ class BaseReader(Trainer, ToMixin):
         torch.cuda.empty_cache()
         gc.collect()
         
-    def postprocess(self):
-        raise NotImplemented
+    def postprocess(
+        self,
+        output: EvalLoopOutput,
+    ) -> Union[Any, EvalPrediction]:
+        return output
         
     def evaluate(
         self,
@@ -124,7 +128,7 @@ class BaseReader(Trainer, ToMixin):
             
         eval_preds = self.postprocess(output, eval_examples, eval_dataset)
         
-        metric = {}
+        metrics = {}
         if self.compute_metrics is not None:
             metrics = self.compute_metrics(eval_preds)
             # To be JSON-serializable, we need to remove numpy types or zero-d tensors
