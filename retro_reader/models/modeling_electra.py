@@ -1,30 +1,23 @@
-from typing import Optional, Tuple
-
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
-from dataclasses import dataclass
-from transformers.file_utils import ModelOutput
+from transformers import (
+    ElectraPreTrainedModel,
+    ElectraModel,
+    ElectraConfig,
+)
 
-# from transformers import AutoModelForSequenceClassification
-from transformers import ElectraPreTrainedModel, ElectraModel, ElectraConfig
-from transformers.modeling_outputs import QuestionAnsweringModelOutput
-
-
-@dataclass
-class QuestionAnsweringNaModelOutput(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
-    start_logits: torch.FloatTensor = None
-    end_logits: torch.FloatTensor = None
-    has_logits: torch.FloatTensor = None
-    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[torch.FloatTensor]] = None
+from .modeling_outputs import (
+    QuestionAnsweringModelOutput,
+    QuestionAnsweringNaModelOutput,
+)
 
 
 class ElectraForQuestionAnsweringAVPool(ElectraPreTrainedModel):
     config_class = ElectraConfig
     base_model_prefix = "electra"
+    model_type = "electra"
     
     def __init__(self, config):
         super(ElectraForQuestionAnsweringAVPool, self).__init__(config)
@@ -37,6 +30,7 @@ class ElectraForQuestionAnsweringAVPool(ElectraPreTrainedModel):
             nn.Linear(config.hidden_size, 2)
         )
         
+        # Initialize weights and apply final processing
         self.post_init()
         
     def forward(
@@ -56,7 +50,7 @@ class ElectraForQuestionAnsweringAVPool(ElectraPreTrainedModel):
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
-        discriminator_hidden_states  = self.electra(
+        discriminator_hidden_states = self.electra(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -67,7 +61,7 @@ class ElectraForQuestionAnsweringAVPool(ElectraPreTrainedModel):
             output_hidden_states=output_hidden_states,
         )
         
-        sequence_output = discriminator_hidden_states [0]
+        sequence_output = discriminator_hidden_states[0]
         
         logits = self.qa_outputs(sequence_output)
         start_logits, end_logits = logits.split(1, dim=-1)
