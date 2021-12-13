@@ -1,3 +1,4 @@
+import os
 from datasets import Sequence, Value, Features
 from datasets import Dataset, DatasetDict
 
@@ -75,3 +76,7 @@ SCORE_EXT_FILE_NAME = "cls_score.json"
 INTENSIVE_PRED_FILE_NAME = "predictions.json"
 NBEST_PRED_FILE_NAME = "nbest_predictions.json"
 SCORE_DIFF_FILE_NAME = "null_odds.json"
+
+DEFAULT_CONFIG_FILE = os.path.join(
+    os.path.realpath(__file__), "args/default_config.yaml"
+)

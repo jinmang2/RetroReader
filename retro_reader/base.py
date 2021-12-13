@@ -5,7 +5,7 @@ import json
 import math
 import collections
 from datetime import datetime
-from typing import Optional, List, Dict, Tuple, Callable, Any
+from typing import Optional, List, Dict, Tuple, Callable, Any, Union
 
 import torch
 import numpy as np
@@ -181,4 +181,23 @@ class BaseReader(Trainer, ToMixin):
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "test",
     ) -> PredictionOutput:
-        pass
+        # memory metrics - must set up as early as possible
+        self._memory_tracker.start()
+        
+        test_dataloader = self.get_test_dataloader(test_dataset)
+        start_time = time.time()
+        
+        compute_metrics = self.compute_metrics
+        self.compute_metrics = None
+        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
+        try:
+            output = eval_loop(
+                test_dataloader,
+                description="Prediction",
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
+        finally:
+            self.compute_metrics = compute_metrics
+            
+        
