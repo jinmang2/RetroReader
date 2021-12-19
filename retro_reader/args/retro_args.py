@@ -40,6 +40,10 @@ class DataArguments:
         default=0.0,
         metadata={"help": ""},
     )
+    rear_threshold: float = field(
+        default=0.0,
+        metadata={"help": ""},
+    )
     n_best_size: int = field(
         default=20,
         metadata={"help": ""},

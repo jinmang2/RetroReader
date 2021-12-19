@@ -328,10 +328,12 @@ class RearVerifier:
         beta1: int = 1, 
         beta2: int = 1,
         best_cof: int = 1,
+        thresh: float = 0.0,
     ):
         self.beta1 = beta1
         self.beta2 = beta2
         self.best_cof = best_cof
+        self.thresh = thresh
     
     def __call__(
         self,
@@ -344,7 +346,7 @@ class RearVerifier:
         for key in score_ext.keys():
             if key not in all_scores:
                 all_scores[key] = []
-            all_scores[key].append(
+            all_scores[key].extend(
                 [self.beta1 * score_ext[key],
                  self.beta2 * score_diff[key]]
             )
@@ -370,7 +372,7 @@ class RearVerifier:
             output_predictions[key] = best_text
             
         for qid in output_predictions.keys():
-            if output_scores[qid] > thresh:
+            if output_scores[qid] > self.thresh:
                 output_predictions[qid] = ""
                 
         return output_predictions, output_scores
@@ -477,6 +479,7 @@ class RetroReader:
             beta1=retro_args.beta1,
             beta2=retro_args.beta2,
             best_cof=retro_args.best_cof,
+            thresh=retro_args.rear_threshold,
         )
         
         return cls(
