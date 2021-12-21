@@ -2,8 +2,9 @@ import os
 import time
 import json
 import math
+import copy
 import collections
-from typing import Optional, List, Dict, Tuple, Callable, Any, Union
+from typing import Optional, List, Dict, Tuple, Callable, Any, Union, NewType
 import numpy as np
 from tqdm import tqdm
 
@@ -20,19 +21,18 @@ from .args import (
     TrainingArguments,
 )
 from .base import BaseReader
-from .constants import (
-    QUESTION_COLUMN_NAME,
-    CONTEXT_COLUMN_NAME,
-    ANSWER_COLUMN_NAME,
-    ID_COLUMN_NAME,
-    SCORE_EXT_FILE_NAME,
-    INTENSIVE_PRED_FILE_NAME,
-    NBEST_PRED_FILE_NAME,
-    SCORE_DIFF_FILE_NAME,
-    DEFAULT_CONFIG_FILE,
+from . import constants as C
+from .preprocess import (
+    get_sketch_features,
+    get_intensive_features
 )
-from .preprocess import get_sketch_features, get_intensive_features
+from .metrics import (
+    compute_classification_metric,
+    compute_squad_v2
+)
 
+
+DataClassType = NewType("DataClassType", Any)
 logger = logging.get_logger(__name__)
 
 
@@ -51,7 +51,7 @@ class SketchReader(BaseReader):
             logits = output.predictions
         else:
             logits = output
-        example_id_to_index = {k: i for i, k in enumerate(eval_examples[ID_COLUMN_NAME])}
+        example_id_to_index = {k: i for i, k in enumerate(eval_examples[C.ID_COLUMN_NAME])}
         features_per_example = collections.defaultdict(list)
         for i, feature in enumerate(eval_dataset):
             features_per_example[example_id_to_index[feature["example_id"]]].append(i)
@@ -70,8 +70,8 @@ class SketchReader(BaseReader):
         score_ext = logits_ans - logits_na
         
         # Save external front verification score        
-        final_map = dict(zip(eval_examples[ID_COLUMN_NAME], score_ext.tolist()))
-        with open(os.path.join(self.args.output_dir, SCORE_EXT_FILE_NAME), "w") as writer:
+        final_map = dict(zip(eval_examples[C.ID_COLUMN_NAME], score_ext.tolist()))
+        with open(os.path.join(self.args.output_dir, C.SCORE_EXT_FILE_NAME), "w") as writer:
             writer.write(json.dumps(final_map, indent=4) + "\n")
         if mode == "evaluate":
             return EvalPrediction(
@@ -95,7 +95,7 @@ class IntensiveReader(BaseReader):
         # Internal Front Verification (I-FV)
         # Verification is already done inside the model
         # Post-processing: we match the start logits and end logits to answers in the original context.
-        predictions, _, _, scores_diff_json = self.compute_predictions(
+        predictions, nbest_json, scores_diff_json = self.compute_predictions(
             eval_examples,
             eval_dataset,
             output.predictions,
@@ -107,6 +107,8 @@ class IntensiveReader(BaseReader):
             log_level=log_level,
             n_tops=(self.data_args.start_n_top, self.data_args.end_n_top),
         )
+        if mode == "retro_inference":
+            return nbest_json, scores_diff_json
         # Format the result to the format the metric expects.
         if self.data_args.version_2_with_negative:
             formatted_predictions = [
@@ -122,7 +124,7 @@ class IntensiveReader(BaseReader):
             return formatted_predictions
         else:
             references = [
-                {"id": ex[ID_COLUMN_NAME], "answers": ex[ANSWER_COLUMN_NAME]}
+                {"id": ex[C.ID_COLUMN_NAME], "answers": ex[C.ANSWER_COLUMN_NAME]}
                 for ex in eval_examples
             ]
             return EvalPrediction(
@@ -153,7 +155,7 @@ class IntensiveReader(BaseReader):
             all_choice_logits = predictions[-1]
 
         # Build a map example to its corresponding features.
-        example_id_to_index = {k: i for i, k in enumerate(examples[ID_COLUMN_NAME])}
+        example_id_to_index = {k: i for i, k in enumerate(examples[C.ID_COLUMN_NAME])}
         features_per_example = collections.defaultdict(list)
         for i, feature in enumerate(features):
             features_per_example[example_id_to_index[feature["example_id"]]].append(i)
@@ -272,7 +274,7 @@ class IntensiveReader(BaseReader):
 
             # Pick the best prediction. If the null answer is not possible, this is easy.
             if not version_2_with_negative:
-                all_predictions[example[ID_COLUMN_NAME]] = predictions[0]["text"]
+                all_predictions[example[C.ID_COLUMN_NAME]] = predictions[0]["text"]
             else:
                 # Otherwise we first need to find the best non-empty prediction.
                 i = 0
@@ -285,14 +287,14 @@ class IntensiveReader(BaseReader):
 
                 # Then we compare to the null prediction using the threshold.
                 score_diff = null_score - best_non_null_pred["start_logit"] - best_non_null_pred["end_logit"]
-                scores_diff_json[example[ID_COLUMN_NAME]] = float(score_diff)  # To be JSON-serializable.
+                scores_diff_json[example[C.ID_COLUMN_NAME]] = float(score_diff)  # To be JSON-serializable.
                 if score_diff > null_score_diff_threshold:
-                    all_predictions[example[ID_COLUMN_NAME]] = ""
+                    all_predictions[example[C.ID_COLUMN_NAME]] = ""
                 else:
-                    all_predictions[example[ID_COLUMN_NAME]] = best_non_null_pred["text"]
+                    all_predictions[example[C.ID_COLUMN_NAME]] = best_non_null_pred["text"]
 
             # Make `predictions` JSON-serializable by casting np.float back to float.
-            all_nbest_json[example[ID_COLUMN_NAME]] = [
+            all_nbest_json[example[C.ID_COLUMN_NAME]] = [
                 {k: (float(v) if isinstance(v, (np.float16, np.float32, np.float64)) else v) for k, v in pred.items()}
                 for pred in predictions
             ]
@@ -302,10 +304,10 @@ class IntensiveReader(BaseReader):
             if not os.path.isdir(output_dir):
                 raise EnvironmentError(f"{output_dir} is not a directory.")
 
-            prediction_file = os.path.join(output_dir, INTENSIVE_PRED_FILE_NAME)
-            nbest_file = os.path.join(output_dir, NBEST_PRED_FILE_NAME)
+            prediction_file = os.path.join(output_dir, C.INTENSIVE_PRED_FILE_NAME)
+            nbest_file = os.path.join(output_dir, C.NBEST_PRED_FILE_NAME)
             if version_2_with_negative:
-                null_odds_file = os.path.join(output_dir, SCORE_DIFF_FILE_NAME)
+                null_odds_file = os.path.join(output_dir, C.SCORE_DIFF_FILE_NAME)
 
             logger.info(f"Saving predictions to {prediction_file}.")
             with open(prediction_file, "w") as writer:
@@ -318,7 +320,7 @@ class IntensiveReader(BaseReader):
                 with open(null_odds_file, "w") as writer:
                     writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
 
-        return all_predictions, all_nbest_json, scores_diff_json, scores_diff_json
+        return all_predictions, all_nbest_json, scores_diff_json
     
     
 class RearVerifier:
@@ -382,20 +384,20 @@ class RetroReader:
     
     def __init__(
         self,
+        args,
         sketch_reader: SketchReader,
         intensive_reader: IntensiveReader,
         rear_verifier: RearVerifier,
+        prep_fn: Tuple[Callable, Callable],
     ):
+        self.args = args
         # Set submodules
         self.sketch_reader = sketch_reader
         self.intensive_reader = intensive_reader
-        self.rear_verifier = RearVerifier(beta1, beta2, best_cof)
+        self.rear_verifier = rear_verifier
         
         # Set prep function for inference
-        self.sketch_prep_fn, is_batched = get_sketch_features(tokenizer, "test", data_args)
-        self.is_sketch_batched = is_batched
-        self.intensive_prep_fn, is_batched = get_intensive_features(tokenizer, "test", data_args)
-        self.is_intensive_batched = is_batched
+        self.sketch_prep_fn, self.intensive_prep_fn = prep_fn
     
     @classmethod
     def load(
@@ -406,16 +408,30 @@ class RetroReader:
         eval_examples=None,
         sketch_eval_dataset=None,
         intensive_eval_dataset=None,
-        config_file: str = DEFAULT_CONFIG_FILE,
+        config_file: str = C.DEFAULT_CONFIG_FILE,
     ):
         # Get arguments from yaml files
         parser = HfArgumentParser([RetroArguments, TrainingArguments])
-        retro_args, training_args = parser.parse_yaml_file(yaml_file=sketch_config_file)
+        retro_args, training_args = parser.parse_yaml_file(yaml_file=config_file)
+        if training_args.run_name is not None and "," in training_args.run_name:
+            sketch_run_name, intensive_run_name = training_args.run_name.split(",")
+        else:
+            sketch_run_name, intensive_run_name = None, None
+        if training_args.metric_for_best_model is not None and "," in training_args.metric_for_best_model:
+            sketch_best_metric, intensive_best_metric = training_args.metric_for_best_model.split(",")
+        else:
+            sketch_best_metric, intensive_best_metric = None, None
+        sketch_training_args = copy.deepcopy(training_args)
+        intensive_training_args = training_args
         
-        sketch_tokenizer = AutoTokenizer.from_pretrained(retro_args.sketch_tokenizer_name)
+        sketch_tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=retro_args.sketch_tokenizer_name,
+            use_auth_token=retro_args.use_auth_token,
+            revision=retro_args.sketch_revision,
+        )
         
-        # if `train_examples` is feeded, perform preprocessing
-        if train_examples is not None and sketch_train_dataset is not None:
+        # If `train_examples` is feeded, perform preprocessing
+        if train_examples is not None and sketch_train_dataset is None:
             sketch_prep_fn, is_batched = get_sketch_features(sketch_tokenizer, "train", retro_args)
             sketch_train_dataset = train_examples.map(
                 sketch_prep_fn,
@@ -424,29 +440,8 @@ class RetroReader:
                 num_proc=retro_args.preprocessing_num_workers,
                 load_from_cache_file=not retro_args.overwrite_cache,
             )
-        if train_examples is not None and intensive_train_dataset is not None:
-            intensive_prep_fn, is_batched = get_intensive_features(intensive_tokenizer, "train", retro_args)
-            intensive_train_dataset = train_examples.map(
-                intensive_prep_fn,
-                batched=is_batched,
-                remove_columns=train_examples.column_names,
-                num_proc=retro_args.preprocessing_num_workers,
-                load_from_cache_file=not retro_args.overwrite_cache,
-            )
-        # Get sketch reader
-        sketch_reader = SketchReader(
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            eval_examples=eval_examples,
-            data_args=retro_args,
-            tokenizer=sketch_tokenizer,
-        )
-        
-        intensive_tokenizer = AutoTokenizer.from_pretrained(retro_args.intensive_tokenizer_name)
-        
-        # if `eval_examples` is feeded, perform preprocessing
-        if eval_examples is not None and sketch_eval_dataset is not None:
+        # If `eval_examples` is feeded, perform preprocessing
+        if eval_examples is not None and sketch_eval_dataset is None:
             sketch_prep_fn, is_batched = get_sketch_features(sketch_tokenizer, "eval", retro_args)
             sketch_eval_dataset = eval_examples.map(
                 sketch_prep_fn,
@@ -455,7 +450,50 @@ class RetroReader:
                 num_proc=retro_args.preprocessing_num_workers,
                 load_from_cache_file=not retro_args.overwrite_cache,
             )
-        if eval_examples is not None and intensive_eval_dataset is not None:
+        # Get preprocessing function for inference
+        sketch_prep_fn, _ = get_sketch_features(sketch_tokenizer, "test", retro_args)
+        
+        # Get model for sketch reader
+        sketch_model_cls = retro_args.sketch_model_cls
+        sketch_model = sketch_model_cls.from_pretrained(
+            pretrained_model_name_or_path=retro_args.sketch_model_name,
+            use_auth_token=retro_args.use_auth_token,
+            revision=retro_args.sketch_revision,
+        )
+
+        # Get sketch reader
+        sketch_training_args.run_name = sketch_run_name
+        sketch_training_args.output_dir += "/sketch"
+        sketch_training_args.metric_for_best_model = sketch_best_metric
+        sketch_reader = SketchReader(
+            model=sketch_model,
+            args=sketch_training_args,
+            train_dataset=sketch_train_dataset,
+            eval_dataset=sketch_eval_dataset,
+            eval_examples=eval_examples,
+            data_args=retro_args,
+            tokenizer=sketch_tokenizer,
+            compute_metrics=compute_classification_metric,
+        )
+        
+        intensive_tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=retro_args.intensive_tokenizer_name,
+            use_auth_token=retro_args.use_auth_token,
+            revision=retro_args.intensive_revision,
+        )
+        
+        # If `train_examples` is feeded, perform preprocessing
+        if train_examples is not None and intensive_train_dataset is None:
+            intensive_prep_fn, is_batched = get_intensive_features(intensive_tokenizer, "train", retro_args)
+            intensive_train_dataset = train_examples.map(
+                intensive_prep_fn,
+                batched=is_batched,
+                remove_columns=train_examples.column_names,
+                num_proc=retro_args.preprocessing_num_workers,
+                load_from_cache_file=not retro_args.overwrite_cache,
+            )
+        # If `eval_examples` is feeded, perform preprocessing
+        if eval_examples is not None and intensive_eval_dataset is None:
             intensive_prep_fn, is_batched = get_intensive_features(intensive_tokenizer, "eval", retro_args)
             intensive_eval_dataset = eval_examples.map(
                 intensive_prep_fn,
@@ -464,14 +502,30 @@ class RetroReader:
                 num_proc=retro_args.preprocessing_num_workers,
                 load_from_cache_file=not retro_args.overwrite_cache,
             )
+        # Get preprocessing function for inference
+        intensive_prep_fn, _ = get_intensive_features(intensive_tokenizer, "test", retro_args)
+        
+        # Get model for intensive reader
+        intensive_model_cls = retro_args.intensive_model_cls
+        intensive_model = intensive_model_cls.from_pretrained(
+            pretrained_model_name_or_path=retro_args.intensive_model_name,
+            use_auth_token=retro_args.use_auth_token,
+            revision=retro_args.intensive_revision,
+        )
+            
         # Get intensive reader
+        intensive_training_args.run_name = intensive_run_name
+        intensive_training_args.output_dir += "/intensive"
+        intensive_training_args.metric_for_best_model = intensive_best_metric
         intensive_reader = IntensiveReader(
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
+            model=intensive_model,
+            args=intensive_training_args,
+            train_dataset=intensive_train_dataset,
+            eval_dataset=intensive_eval_dataset,
             eval_examples=eval_examples,
             data_args=retro_args,
             tokenizer=intensive_tokenizer,
+            compute_metrics=compute_squad_v2,
         )
         
         # Get rear verifier
@@ -483,46 +537,113 @@ class RetroReader:
         )
         
         return cls(
+            args=retro_args,
             sketch_reader=sketch_reader,
             intensive_reader=intensive_reader,
             rear_verifier=rear_verifier,
+            prep_fn=(sketch_prep_fn, intensive_prep_fn),
         )
         
     def __call__(
         self,
         query: str,
         context: Union[str, List[str]],
+        return_submodule_outputs: bool = False,
     ):
         if isinstance(context, list):
             context = " ".join(context)
-        predict_examples = Dataset.from_dict({
+        predict_examples = datasets.Dataset.from_dict({
             "example_id": ["0"],
-            QUESTION_COLUMN_NAME: [query], 
-            CONTEXT_COLUMN_NAME: [context]
+            C.ID_COLUMN_NAME: ["id-01"],
+            C.QUESTION_COLUMN_NAME: [query], 
+            C.CONTEXT_COLUMN_NAME: [context]
         })
         sketch_features = predict_examples.map(
             self.sketch_prep_fn,
-            batched=self.is_sketch_batched,
+            batched=True,
             remove_columns=predict_examples.column_names,
         )
         intensive_features = predict_examples.map(
             self.intensive_prep_fn,
-            batched=self.is_intensive_batched,
+            batched=True,
             remove_columns=predict_examples.column_names,
         )
         score_ext = self.sketch_reader.predict(sketch_features, predict_examples)
-        _, nbest_preds, score_diff, _ = self.intensive_reader.predict(intensive_features, predict_examples)
+        nbest_preds, score_diff = self.intensive_reader.predict(
+            intensive_features, predict_examples, mode="retro_inference")
         predictions, scores = self.rear_verifier(score_ext, score_diff, nbest_preds)
-        return predictions, scores
+        outputs = (predictions, scores)
+        if return_submodule_outputs:
+            outputs += (score_ext, nbest_preds, score_diff)
+        return outputs
     
-    def train(self):
+    def train(self, module: str = "all"):
+        
+        def wandb_finish(module):
+            for callback in module.callback_handler.callbacks:
+                if "wandb" in str(type(callback)).lower():
+                    callback._wandb.finish()
+                    callback._initialized = False
+        
         # Train sketch reader
-        self.sketch_reader.train()
-        self.sketch_reader.free_memory()
-        self.sketch_reader.save_model()
-        self.sketch_reader.save_state()
+        if module.lower() in ["all", "sketch"]:
+            self.sketch_reader.train()
+            self.sketch_reader.save_model()
+            self.sketch_reader.save_state()
+            self.sketch_reader.free_memory()
+            wandb_finish(self.sketch_reader)
         # Train intensive reader
-        self.intensive_reader.train()
-        self.intensive_reader.free_memory()
-        self.intensive_reader.save_model()
-        self.intensive_reader.save_state()
+        if module.lower() in ["all", "intensive"]:
+            self.intensive_reader.train()
+            self.intensive_reader.save_model()
+            self.intensive_reader.save_state()
+            self.intensive_reader.free_memory()
+            wandb_finish(self.intensive_reader)
+            
+    @property
+    def null_score_diff_threshold(self):
+        return self.args.null_score_diff_threshold
+    
+    @null_score_diff_threshold.setter
+    def null_score_diff_threshold(self, val):
+        self.args.null_score_diff_threshold = val
+        
+    @property
+    def n_best_size(self):
+        return self.args.n_best_size
+    
+    @n_best_size.setter
+    def n_best_size(self, val):
+        self.args.n_best_size = val
+        
+    @property
+    def beta1(self):
+        return self.rear_verifier.beta1
+    
+    @beta1.setter
+    def beta1(self, val):
+        self.rear_verifier.beta1 = val
+        
+    @property
+    def beta2(self):
+        return self.rear_verifier.beta2
+    
+    @beta2.setter
+    def beta2(self, val):
+        self.rear_verifier.beta2 = val
+        
+    @property
+    def best_cof(self):
+        return self.rear_verifier.best_cof
+    
+    @best_cof.setter
+    def best_cof(self, val):
+        self.rear_verifier.best_cof = val
+        
+    @property
+    def rear_threshold(self):
+        return self.rear_verifier.thresh
+    
+    @rear_threshold.setter
+    def rear_threshold(self, val):
+        self.rear_verifier.thresh = val

@@ -3,7 +3,12 @@ from .. import models
 
 
 @dataclass
-class DataArguments:
+class RetroDataModelArguments:
+    pass
+
+
+@dataclass
+class DataArguments(RetroDataModelArguments):
     max_seq_length: int = field(
         default=512,
         metadata={"help": ""},
@@ -72,10 +77,22 @@ class DataArguments:
         default=1,
         metadata={"help": ""},
     )
+    
+    
+@dataclass
+class ModelArguments(RetroDataModelArguments):
+    use_auth_token: bool = field(
+        default=False,
+        metadata={"help": ""},
+    )
         
         
 @dataclass
-class ModelArguments:
+class SketchModelArguments(ModelArguments):
+    sketch_revision: str = field(
+        default="main",
+        metadata={"help": ""},
+    )
     sketch_model_name: str = field(
         default="monologg/koelectra-small-v3-discriminator",
         metadata={"help": ""},
@@ -85,7 +102,15 @@ class ModelArguments:
         metadata={"help": ""},
     )
     sketch_architectures: str = field(
-        default="AutoModelForSequenceClassification",
+        default="ElectraForSequenceClassification",
+        metadata={"help": ""},
+    )
+            
+            
+@dataclass
+class IntensiveModelArguments(ModelArguments):
+    intensive_revision: str = field(
+        default="main",
         metadata={"help": ""},
     )
     intensive_model_name: str = field(
@@ -101,17 +126,27 @@ class ModelArguments:
         metadata={"help": ""},
     )
     
+    
+@dataclass
+class RetroArguments(
+    DataArguments, 
+    SketchModelArguments, 
+    IntensiveModelArguments,
+):
     def __post_init__(self):
+        # Sketch
+        model_cls = getattr(models, self.sketch_architectures, None)
+        if model_cls is None:
+            raise AttributeError
+        self.sketch_model_cls = model_cls
+        self.sketch_model_type = model_cls.model_type
+        if self.sketch_tokenizer_name is None:
+            self.sketch_tokenizer_name = self.sketch_model_name
+        # Intensive
         model_cls = getattr(models, self.intensive_architectures, None)
         if model_cls is None:
             raise AttributeError
-        self.model_type = model_cls.model_type
-        if self.sketch_tokenizer_name is None:
-            self.sketch_tokenizer_name = self.sketch_model_name
-        if self.intensive_model_name is None:
+        self.intensive_model_cls = model_cls
+        self.intensive_model_type = model_cls.model_type
+        if self.intensive_tokenizer_name is None:
             self.intensive_tokenizer_name = self.intensive_model_name
-    
-    
-@dataclass
-class RetroArguments(DataArguments, ModelArguments):
-    pass
