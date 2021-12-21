@@ -126,7 +126,7 @@ class BaseReader(Trainer, ToMixin):
                 columns=list(eval_dataset.features.keys()),
             )
             
-        eval_preds = self.postprocess(output, eval_examples, eval_dataset)
+        eval_preds = self.postprocess(output, eval_examples, eval_dataset, mode="evaluate")
         
         metrics = {}
         if self.compute_metrics is not None:
@@ -180,6 +180,7 @@ class BaseReader(Trainer, ToMixin):
         test_examples: datasets.Dataset,
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "test",
+        mode: bool = "predict",
     ) -> PredictionOutput:
         # memory metrics - must set up as early as possible
         self._memory_tracker.start()
@@ -200,4 +201,14 @@ class BaseReader(Trainer, ToMixin):
         finally:
             self.compute_metrics = compute_metrics
             
+        if isinstance(test_dataset, datasets.Dataset):
+            test_dataset.set_format(
+                type=test_dataset.format["type"],
+                columns=list(test_dataset.features.keys()),
+            )
+            
+        predictions = self.postprocess(output, test_examples, test_dataset, mode=mode)
+            
+        self._memory_tracker.stop_and_update_metrics(output.metrics)
         
+        return predictions
