@@ -1,0 +1,48 @@
+RetroDataModelArguments:
+
+    # DataArguments
+    max_seq_length: 512
+    max_answer_length: 30
+    doc_stride: 128
+    return_token_type_ids: True
+    pad_to_max_length: True
+    preprocessing_num_workers: 5
+    overwrite_cache: False
+    version_2_with_negative: True
+    null_score_diff_threshold: 0.0
+    rear_threshold: 0.0
+    n_best_size: 20
+    use_choice_logits: False
+    start_n_top: -1
+    end_n_top: -1
+    beta1: 1
+    beta2: 1
+    best_cof: 1
+    
+    # SketchModelArguments
+    sketch_model_name: monologg/koelectra-small-v3-discriminator
+    sketch_architectures: ElectraForSequenceClassification
+    
+    # IntensiveModelArguments
+    intensive_model_name: monologg/koelectra-small-v3-discriminator
+    intensive_architectures: ElectraForQuestionAnsweringAVPool
+    
+
+TrainingArguments:
+    report_to: wandb
+    run_name: train_sketch_reader,train_intensive_reader
+    output_dir: outputs
+    overwrite_output_dir: False
+    learning_rate: 2e-5
+    evaluation_strategy: epoch
+    save_strategy: epoch
+    per_device_train_batch_size: 128
+    per_device_eval_batch_size: 128
+    num_train_epochs: 10.0
+    save_steps: 10000
+    save_total_limit: 5
+    fp16: True
+    warmup_steps: 814
+    load_best_model_at_end: True
+    metric_for_best_model: f1,exact
+    logging_dir: logs

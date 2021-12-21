@@ -1,0 +1,41 @@
+RetroDataModelArguments:
+
+    # DataArguments
+    max_seq_length: 512
+    max_answer_length: 30
+    doc_stride: 128
+    return_token_type_ids: True
+    pad_to_max_length: True
+    preprocessing_num_workers: 5
+    overwrite_cache: False
+    version_2_with_negative: True
+    null_score_diff_threshold: 0.0
+    rear_threshold: 0.0
+    n_best_size: 20
+    use_choice_logits: False
+    start_n_top: -1
+    end_n_top: -1
+    beta1: 1
+    beta2: 1
+    best_cof: 1
+    
+    # ModelArguments
+    use_auth_token: False
+    
+    # SketchModelArguments
+    sketch_revision: ko-electra-small-sketch
+    sketch_model_name: jinmang2/retro-reader
+    sketch_architectures: ElectraForSequenceClassification
+    
+    # IntensiveModelArguments
+    intensive_revision: ko-electra-small-intensive
+    intensive_model_name: jinmang2/retro-reader
+    intensive_architectures: ElectraForQuestionAnsweringAVPool
+    
+
+TrainingArguments:
+    output_dir: outputs
+    no_cuda: True # If you want to use cuda,
+                  # change `no_cuda` to False and `fp16` to True
+    per_device_train_batch_size: 1
+    per_device_eval_batch_size: 1
