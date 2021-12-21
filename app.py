@@ -112,7 +112,7 @@ def main():
             label="Type your query",
             value=getattr(C, f"{lang_prefix}_EXAMPLE_QUERY"),
             max_chars=None,
-            help=C.KO_QUERY_HELP_TEXT,
+            help=getattr(C, f"{lang_prefix}_QUERY_HELP_TEXT"),
         )
         context = st.text_area(
             label="Type your context",
@@ -131,6 +131,8 @@ def main():
                 return_submodule_outputs=return_submodule_outputs,
             )
         answer, score = outputs[0]["id-01"], outputs[1]
+        if not answer:
+            answer = "No answer"
         st.markdown("## Results")
         st.write(answer)
         st.markdown("### Rear Verification Score")
