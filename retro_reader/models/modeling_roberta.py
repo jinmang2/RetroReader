@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from transformers import (
+    RobertaForSequenceClassification as SeqClassification,
     RobertaPreTrainedModel,
     RobertaModel,
     RobertaConfig,
@@ -12,6 +13,10 @@ from .modeling_outputs import (
     QuestionAnsweringModelOutput,
     QuestionAnsweringNaModelOutput,
 )
+
+
+class RobertaForSequenceClassification(SeqClassification):
+    model_type = "roberta"
 
 
 class RobertaForQuestionAnsweringAVPool(RobertaPreTrainedModel):    

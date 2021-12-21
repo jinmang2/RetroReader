@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from transformers import (
+    ElectraForSequenceClassification as SeqClassification,
     ElectraPreTrainedModel,
     ElectraModel,
     ElectraConfig,
@@ -12,6 +13,10 @@ from .modeling_outputs import (
     QuestionAnsweringModelOutput,
     QuestionAnsweringNaModelOutput,
 )
+
+
+class ElectraForSequenceClassification(SeqClassification):
+    model_type = "electra"
 
 
 class ElectraForQuestionAnsweringAVPool(ElectraPreTrainedModel):

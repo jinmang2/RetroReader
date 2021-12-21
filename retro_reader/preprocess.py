@@ -108,7 +108,7 @@ def get_intensive_features(tokenizer, mode, data_args):
     
     pad_on_right = tokenizer.padding_side == "right"
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
-    beam_based = data_args.model_type in ["xlnet", "xlm"]
+    beam_based = data_args.intensive_model_type in ["xlnet", "xlm"]
 
     def tokenize_fn(examples):
         """Tokenize questions and contexts
