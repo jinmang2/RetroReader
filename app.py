@@ -6,6 +6,9 @@ import yaml
 import pyarrow
 import tokenizers
 
+
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
 # SETTING PAGE CONFIG TO WIDE MODE
 st.set_page_config(layout="wide")
 
