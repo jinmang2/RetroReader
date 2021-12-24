@@ -38,4 +38,4 @@ TrainingArguments:
     no_cuda: True # If you want to use cuda,
               # change `no_cuda` to False and `fp16` to True
     per_device_train_batch_size: 1
-    per_device_eval_batch_size: 1
+    per_device_eval_batch_size: 12
