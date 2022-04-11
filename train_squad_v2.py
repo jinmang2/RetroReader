@@ -48,7 +48,7 @@ def schema_integrate(example: Batch) -> Union[Dict, Any]:
 
 
 # data augmentation for multiple answers
-def data_aug_for_multiple_answers(examples):
+def data_aug_for_multiple_answers(example: Batch) -> Union[Dict, Any]:
     result = {key: [] for key in examples.keys()}
     
     def update(i, answers=None):
@@ -90,6 +90,7 @@ def main(args):
     #       process other types of data.
     squad_v2 = squad_v2.map(
         schema_integrate, 
+        batched=True,
         remove_columns=squad_v2.column_names["train"],
         features=EXAMPLE_FEATURES,
     )
