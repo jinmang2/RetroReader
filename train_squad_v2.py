@@ -1,3 +1,6 @@
+from typing import Union, Any, Dict
+from datasets.arrow_dataset import Batch
+
 import argparse
 import datasets
 from transformers.utils import logging, check_min_version
@@ -15,19 +18,21 @@ require_version("datasets>=1.8.0")
 logger = logging.get_logger(__name__)
 
 
-def schema_integrate(example):
+def schema_integrate(example: Batch) -> Union[Dict, Any]:
     title = example["title"]
     question = example["question"]
     context = example["context"]
     guid = example["id"]
-    classtype = ""
-    dataset_name = source = "squad_v2"
-    if example["answers"]["text"]:
-        answers = example["answers"]
-        is_impossible = False
-    else:
-        answers = {"text": "", "answer_start": [-1]}
-        is_impossible = True
+    classtype = [""] * len(title)
+    dataset_name = source = ["squad_v2"] * len(title)
+    answers, is_impossible = [], []
+    for answer_examples in example["answers"]:
+        if answer_examples["text"]:
+            answers.append(answer_examples)
+            is_impossible.append(False)
+        else:
+            answers.append({"text": [""], "answer_start": [-1]})
+            is_impossible.append(True)
     # The feature names must be sorted.
     return {
         "guid": guid,
@@ -88,8 +93,8 @@ def main(args):
         remove_columns=squad_v2.column_names["train"],
         features=EXAMPLE_FEATURES,
     )
-    # num_rows in train: 130,319
-    # num_rows in valid:  11,873
+    # num_rows in train: 130,319, num_unanswerable in train: 43,498
+    # num_rows in valid:  11,873, num_unanswerable in valid:  5,945
     num_unanswerable_train = sum(squad_v2["train"]["is_impossible"])
     num_unanswerable_valid = sum(squad_v2["validation"]["is_impossible"])
     logger.warning(f"Number of unanswerable sample for SQuAD v2.0 train dataset: {num_unanswerable_train}")
