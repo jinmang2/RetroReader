@@ -218,8 +218,8 @@ class IntensiveReader(BaseReader):
                         if (
                             start_index >= len(offset_mapping)
                             or end_index >= len(offset_mapping)
-                            or offset_mapping[start_index] is None
-                            or offset_mapping[end_index] is None
+                            or not offset_mapping[start_index]
+                            or not offset_mapping[end_index]
                         ):
                             continue
                         # Don't consider answers with a length negative or > max_answer_length.
