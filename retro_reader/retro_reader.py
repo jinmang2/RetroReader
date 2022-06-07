@@ -549,7 +549,7 @@ class RetroReader:
         query: str,
         context: Union[str, List[str]],
         return_submodule_outputs: bool = False,
-    ):
+    ) -> Tuple[Any]:
         if isinstance(context, list):
             context = " ".join(context)
         predict_examples = datasets.Dataset.from_dict({
@@ -558,24 +558,7 @@ class RetroReader:
             C.QUESTION_COLUMN_NAME: [query], 
             C.CONTEXT_COLUMN_NAME: [context]
         })
-        sketch_features = predict_examples.map(
-            self.sketch_prep_fn,
-            batched=True,
-            remove_columns=predict_examples.column_names,
-        )
-        intensive_features = predict_examples.map(
-            self.intensive_prep_fn,
-            batched=True,
-            remove_columns=predict_examples.column_names,
-        )
-        score_ext = self.sketch_reader.predict(sketch_features, predict_examples)
-        nbest_preds, score_diff = self.intensive_reader.predict(
-            intensive_features, predict_examples, mode="retro_inference")
-        predictions, scores = self.rear_verifier(score_ext, score_diff, nbest_preds)
-        outputs = (predictions, scores)
-        if return_submodule_outputs:
-            outputs += (score_ext, nbest_preds, score_diff)
-        return outputs
+        return self.inference(predict_examples)
     
     def train(self, module: str = "all"):
         
@@ -599,6 +582,35 @@ class RetroReader:
             self.intensive_reader.save_state()
             self.intensive_reader.free_memory()
             wandb_finish(self.intensive_reader)
+            
+    def inference(self, test_dataset: datasets.Dataset) -> Tuple[Any]:
+        if "example_id" not in test_dataset.column_names:
+            test_dataset = test_dataset.map(
+                lambda _, i: {"example_id": str(i)},
+                with_indices=True,
+            )
+        sketch_features = predict_examples.map(
+            self.sketch_prep_fn,
+            batched=True,
+            remove_columns=predict_examples.column_names,
+        )
+        intensive_features = predict_examples.map(
+            self.intensive_prep_fn,
+            batched=True,
+            remove_columns=predict_examples.column_names,
+        )
+        self.sketch_reader.to(self.sketch_reader.args.device)
+        score_ext = self.sketch_reader.predict(sketch_features, predict_examples)
+        self.sketch_reader.to("cpu")
+        self.intensive_reader.to(self.intensive_reader.args.device)
+        nbest_preds, score_diff = self.intensive_reader.predict(
+            intensive_features, predict_examples, mode="retro_inference")
+        self.intensive_reader.to("cpu")
+        predictions, scores = self.rear_verifier(score_ext, score_diff, nbest_preds)
+        outputs = (predictions, scores)
+        if return_submodule_outputs:
+            outputs += (score_ext, nbest_preds, score_diff)
+        return outputs
             
     @property
     def null_score_diff_threshold(self):
